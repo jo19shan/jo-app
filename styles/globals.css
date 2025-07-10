@@ -1,0 +1,19 @@
+/* styles/globals.css */
+
+:root {
+  --color-moon:   #1e0337;
+  --color-earth:  #0f0f18;
+  --color-accent: #e33d89;
+}
+
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background: linear-gradient(
+    135deg,
+    var(--color-moon) 0%,
+    var(--color-earth) 100%
+  );
+  color: var(--color-accent);
+  min-height: 100vh;
+}
