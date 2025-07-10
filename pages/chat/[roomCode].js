@@ -35,19 +35,18 @@ export default function ChatRoom() {
 
   const playerRef = useRef(null);
   const bottomRef = useRef(null);
-
   const roomRef = roomCode ? doc(db, 'rooms', roomCode) : null;
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
-      if (firebaseUser) setUser(firebaseUser);
-      else router.push('/login');
+    const unsub = auth.onAuthStateChanged((u) => {
+      if (u) setUser(u);
+      else router.replace('/login');
     });
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  // Listen for new chat messages
+  // Subscribe to chat messages
   useEffect(() => {
     if (!roomCode) return;
     const q = query(
@@ -59,7 +58,7 @@ export default function ChatRoom() {
     });
   }, [roomCode]);
 
-  // Listen for queue changes
+  // Subscribe to queue
   useEffect(() => {
     if (!roomCode) return;
     const q = query(
@@ -71,24 +70,24 @@ export default function ChatRoom() {
     });
   }, [roomCode]);
 
-  // Listen for room state (current video + play/pause)
+  // Subscribe to room state (current video + play/pause)
   useEffect(() => {
     if (!roomRef) return;
     return onSnapshot(roomRef, (snap) => {
-      const data = snap.data();
-      if (data?.currentVideoId) setCurrentVideoId(data.currentVideoId);
-      if (typeof data?.playing === 'boolean') setPlaying(data.playing);
+      const data = snap.data() || {};
+      if (data.currentVideoId) setCurrentVideoId(data.currentVideoId);
+      if (typeof data.playing === 'boolean') setPlaying(data.playing);
     });
   }, [roomRef]);
 
-  // Auto‑scroll chat on new message
+  // Auto-scroll chat
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Initialize YouTube Player whenever currentVideoId changes
+  // Initialize/update YouTube player
   useEffect(() => {
-    const setupPlayer = () => {
+    const setup = () => {
       playerRef.current = new window.YT.Player('yt-player', {
         height: '220',
         width: '100%',
@@ -106,20 +105,20 @@ export default function ChatRoom() {
 
     if (!window.YT) {
       loadScript('https://www.youtube.com/iframe_api', () => {
-        window.onYouTubeIframeAPIReady = setupPlayer;
+        window.onYouTubeIframeAPIReady = setup;
       });
     } else {
-      setupPlayer();
+      setup();
     }
   }, [currentVideoId]);
 
-  // Sync play/pause state to player
+  // Sync play/pause with player
   useEffect(() => {
     if (!playerRef.current) return;
     playing ? playerRef.current.playVideo() : playerRef.current.pauseVideo();
   }, [playing]);
 
-  // Send chat message
+  // Send a chat message
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
     await addDoc(collection(db, 'rooms', roomCode, 'messages'), {
@@ -131,33 +130,38 @@ export default function ChatRoom() {
     setNewMessage('');
   };
 
-  // Helper to update Firestore room doc
+  // Helper to update room document
   const updateRoom = (data) => {
-    if (roomRef) setDoc(roomRef, data, { merge: true });
+    roomRef && setDoc(roomRef, data, { merge: true });
   };
 
-  // Handle YouTube search
+  // Perform YouTube search
   const handleSearch = async () => {
     if (!searchTerm.trim()) return;
-    const { data } = await axios.get(
-      'https://www.googleapis.com/youtube/v3/search',
-      {
-        params: {
-          key: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
-          part: 'snippet',
-          type: 'video',
-          maxResults: 8,
-          q: searchTerm,
-        },
-      }
-    );
-    setSearchResults(
-      data.items.map((i) => ({
-        videoId: i.id.videoId,
-        title: i.snippet.title,
-        thumbnail: i.snippet.thumbnails.medium.url,
-      }))
-    );
+    try {
+      const { data } = await axios.get(
+        'https://www.googleapis.com/youtube/v3/search',
+        {
+          params: {
+            key: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
+            part: 'snippet',
+            type: 'video',
+            maxResults: 8,
+            q: searchTerm,
+          },
+        }
+      );
+      setSearchResults(
+        data.items.map((i) => ({
+          videoId: i.id.videoId,
+          title: i.snippet.title,
+          thumbnail: i.snippet.thumbnails.medium.url,
+        }))
+      );
+    } catch (err) {
+      console.error('YouTube API error', err);
+      alert('Search failed. Check your API key or referer restrictions.');
+    }
   };
 
   // Add a video to the queue
@@ -171,7 +175,7 @@ export default function ChatRoom() {
     setTab('queue');
   };
 
-  // FIFO: play next video when current ends
+  // Play next video in FIFO order
   const handleEnded = useCallback(async () => {
     if (!queueItems.length) return;
     const next = queueItems[0];
@@ -185,36 +189,27 @@ export default function ChatRoom() {
 
   return (
     <div className={styles.container}>
-      <div className={styles.topBar}>Room: {roomCode}</div>
+      <header className={styles.topBar}>💖 Room: {roomCode} 💖</header>
 
       <div className={styles.playerWrapperFixed}>
         <div id="yt-player" />
       </div>
 
-      <div className={styles.tabButtons}>
-        <button
-          className={tab === 'chat' ? styles.activeTab : styles.tab}
-          onClick={() => setTab('chat')}
-        >
-          Chat
-        </button>
-        <button
-          className={tab === 'search' ? styles.activeTab : styles.tab}
-          onClick={() => setTab('search')}
-        >
-          Search
-        </button>
-        <button
-          className={tab === 'queue' ? styles.activeTab : styles.tab}
-          onClick={() => setTab('queue')}
-        >
-          Queue
-        </button>
-      </div>
+      <nav className={styles.tabButtons}>
+        {['chat', 'search', 'queue'].map((t) => (
+          <button
+            key={t}
+            className={tab === t ? styles.activeTab : styles.tab}
+            onClick={() => setTab(t)}
+          >
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </nav>
 
       {tab === 'chat' && (
         <>
-          <div className={styles.chatBox}>
+          <section className={styles.chatBox}>
             {messages.map((msg) => (
               <div key={msg.id} className={styles.message}>
                 {msg.avatar && (
@@ -233,30 +228,30 @@ export default function ChatRoom() {
               </div>
             ))}
             <div ref={bottomRef} />
-          </div>
-          <div className={styles.inputBar}>
+          </section>
+          <footer className={styles.inputBar}>
             <input
               className={styles.input}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Type a message…"
+              placeholder="Type your love note…"
             />
             <button onClick={sendMessage} className={styles.sendButton}>
-              Send
+              ❤️ Send
             </button>
-          </div>
+          </footer>
         </>
       )}
 
       {tab === 'search' && (
-        <div className={styles.searchPanel}>
+        <section className={styles.searchPanel}>
           <div className={styles.searchBar}>
             <input
               className={styles.input}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search YouTube…"
+              placeholder="Search songs…"
             />
             <button onClick={handleSearch} className={styles.sendButton}>
               🔍
@@ -269,37 +264,40 @@ export default function ChatRoom() {
                   src={item.thumbnail}
                   width={120}
                   height={90}
-                  alt={item.title}
+                  alt="thumb"
                 />
                 <div>
-                  <p>{item.title}</p>
-                  <button onClick={() => addToQueue(item)}>
-                    ➕ Add to Queue
+                  <p className={styles.resultTitle}>{item.title}</p>
+                  <button
+                    onClick={() => addToQueue(item)}
+                    className={styles.queueButton}
+                  >
+                    ➕ Love
                   </button>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
       {tab === 'queue' && (
-        <div className={styles.queuePanel}>
+        <section className={styles.queuePanel}>
           {queueItems.map((item) => (
             <div key={item.id} className={styles.queueItem}>
               <Image
                 src={item.thumbnail}
                 width={120}
                 height={90}
-                alt={item.title}
+                alt="thumb"
               />
               <div>
-                <p>{item.title}</p>
+                <p className={styles.resultTitle}>{item.title}</p>
                 <small>Added by {item.addedBy}</small>
               </div>
             </div>
           ))}
-        </div>
+        </section>
       )}
     </div>
   );
