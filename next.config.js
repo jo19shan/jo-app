@@ -5,4 +5,7 @@ module.exports = {
     // Skip ESLint during production builds
     ignoreDuringBuilds: true,
   },
+  images: {
+    domains: ['i.ytimg.com'], // ✅ Allow loading YouTube thumbnails
+  },
 };
