@@ -1,11 +1,12 @@
 /** @type {import('next').NextConfig} */
-module.exports = {
+const nextConfig = {
   reactStrictMode: true,
   eslint: {
-    // Skip ESLint during production builds
     ignoreDuringBuilds: true,
   },
   images: {
-    domains: ['i.ytimg.com'], // ✅ Allow loading YouTube thumbnails
+    domains: ['i.ytimg.com', 'lh3.googleusercontent.com'],
   },
 };
+
+module.exports = nextConfig;

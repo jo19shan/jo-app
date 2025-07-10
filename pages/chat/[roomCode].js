@@ -98,6 +98,12 @@ export default function ChatRoom() {
     } else {
       setupPlayer();
     }
+  }, []);
+
+  useEffect(() => {
+    if (playerRef.current && currentVideoId) {
+      playerRef.current.loadVideoById(currentVideoId);
+    }
   }, [currentVideoId]);
 
   useEffect(() => {
@@ -124,18 +130,15 @@ export default function ChatRoom() {
   const handleSearch = async () => {
     if (!searchTerm.trim()) return;
     try {
-      const response = await axios.get(
-        'https://www.googleapis.com/youtube/v3/search',
-        {
-          params: {
-            key: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
-            part: 'snippet',
-            type: 'video',
-            maxResults: 8,
-            q: searchTerm,
-          },
-        }
-      );
+      const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+        params: {
+          key: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
+          part: 'snippet',
+          type: 'video',
+          maxResults: 8,
+          q: searchTerm,
+        },
+      });
       const data = response.data;
       setSearchResults(
         data.items.map((i) => ({
@@ -146,25 +149,20 @@ export default function ChatRoom() {
       );
     } catch (error) {
       console.error('YouTube API error', error);
-      alert('Search failed. Please check your YouTube API key or referer restrictions.');
+      alert('Search failed. Check your API key or referer settings.');
     }
   };
 
-const addToQueue = async (item) => {
-  if (!user) return;
-
-  await addDoc(collection(db, 'rooms', roomCode, 'queue'), {
-    ...item,
-    addedBy: user.displayName,
-    addedAt: serverTimestamp(),
-  });
-
-  // Set the video to play immediately
-  await updateRoom({ currentVideoId: item.videoId, playing: true });
-
-  setTab('queue');
-};
-
+  const addToQueue = async (item) => {
+    if (!user) return;
+    await addDoc(collection(db, 'rooms', roomCode, 'queue'), {
+      ...item,
+      addedBy: user.displayName,
+      addedAt: serverTimestamp(),
+    });
+    await updateRoom({ currentVideoId: item.videoId, playing: true });
+    setTab('queue');
+  };
 
   const handleEnded = useCallback(async () => {
     if (!queueItems.length) return;
