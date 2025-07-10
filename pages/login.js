@@ -9,7 +9,7 @@ export default function Login() {
 
   // If already signed in, redirect to chat automatically
   useEffect(() => {
-    if (auth.currentUser) router.replace('/chat')
+    if (auth.currentUser) router.replace('/rooms')
   }, [router])
 
   const handleGoogle = async () => {
