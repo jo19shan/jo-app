@@ -35,69 +35,57 @@ export default function ChatRoom() {
 
   const playerRef = useRef(null);
   const bottomRef = useRef(null);
+
   const roomRef = roomCode ? doc(db, 'rooms', roomCode) : null;
 
-  // Redirect to login if not authenticated
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      if (u) setUser(u);
-      else router.replace('/login');
+    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
+      if (firebaseUser) setUser(firebaseUser);
+      else router.push('/login');
     });
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
 
-  // Subscribe to chat messages
   useEffect(() => {
     if (!roomCode) return;
-    const q = query(
-      collection(db, 'rooms', roomCode, 'messages'),
-      orderBy('createdAt')
-    );
+    const q = query(collection(db, 'rooms', roomCode, 'messages'), orderBy('createdAt'));
     return onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setMessages(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
     });
   }, [roomCode]);
 
-  // Subscribe to queue
   useEffect(() => {
     if (!roomCode) return;
-    const q = query(
-      collection(db, 'rooms', roomCode, 'queue'),
-      orderBy('addedAt')
-    );
+    const q = query(collection(db, 'rooms', roomCode, 'queue'), orderBy('addedAt'));
     return onSnapshot(q, (snap) => {
-      setQueueItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setQueueItems(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
     });
   }, [roomCode]);
 
-  // Subscribe to room state (current video + play/pause)
   useEffect(() => {
     if (!roomRef) return;
     return onSnapshot(roomRef, (snap) => {
-      const data = snap.data() || {};
-      if (data.currentVideoId) setCurrentVideoId(data.currentVideoId);
-      if (typeof data.playing === 'boolean') setPlaying(data.playing);
+      const data = snap.data();
+      if (data?.currentVideoId) setCurrentVideoId(data.currentVideoId);
+      if (typeof data?.playing === 'boolean') setPlaying(data.playing);
     });
   }, [roomRef]);
 
-  // Auto-scroll chat
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Initialize/update YouTube player
   useEffect(() => {
-    const setup = () => {
+    const setupPlayer = () => {
       playerRef.current = new window.YT.Player('yt-player', {
         height: '220',
         width: '100%',
         videoId: currentVideoId,
         playerVars: { controls: 1, playsinline: 1 },
         events: {
+          onReady: () => {},
           onStateChange: (e) => {
             if (e.data === window.YT.PlayerState.ENDED) handleEnded();
-            if (e.data === window.YT.PlayerState.PLAYING) updateRoom({ playing: true });
-            if (e.data === window.YT.PlayerState.PAUSED) updateRoom({ playing: false });
           },
         },
       });
@@ -105,20 +93,19 @@ export default function ChatRoom() {
 
     if (!window.YT) {
       loadScript('https://www.youtube.com/iframe_api', () => {
-        window.onYouTubeIframeAPIReady = setup;
+        window.onYouTubeIframeAPIReady = setupPlayer;
       });
     } else {
-      setup();
+      setupPlayer();
     }
   }, [currentVideoId]);
 
-  // Sync play/pause with player
   useEffect(() => {
     if (!playerRef.current) return;
-    playing ? playerRef.current.playVideo() : playerRef.current.pauseVideo();
+    if (playing) playerRef.current.playVideo();
+    else playerRef.current.pauseVideo();
   }, [playing]);
 
-  // Send a chat message
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
     await addDoc(collection(db, 'rooms', roomCode, 'messages'), {
@@ -130,16 +117,14 @@ export default function ChatRoom() {
     setNewMessage('');
   };
 
-  // Helper to update room document
   const updateRoom = (data) => {
-    roomRef && setDoc(roomRef, data, { merge: true });
+    if (roomRef) setDoc(roomRef, data, { merge: true });
   };
 
-  // Perform YouTube search
   const handleSearch = async () => {
     if (!searchTerm.trim()) return;
     try {
-      const { data } = await axios.get(
+      const response = await axios.get(
         'https://www.googleapis.com/youtube/v3/search',
         {
           params: {
@@ -151,6 +136,7 @@ export default function ChatRoom() {
           },
         }
       );
+      const data = response.data;
       setSearchResults(
         data.items.map((i) => ({
           videoId: i.id.videoId,
@@ -158,13 +144,12 @@ export default function ChatRoom() {
           thumbnail: i.snippet.thumbnails.medium.url,
         }))
       );
-    } catch (err) {
-      console.error('YouTube API error', err);
-      alert('Search failed. Check your API key or referer restrictions.');
+    } catch (error) {
+      console.error('YouTube API error', error);
+      alert('Search failed. Please check your YouTube API key or referer restrictions.');
     }
   };
 
-  // Add a video to the queue
   const addToQueue = async (item) => {
     if (!user) return;
     await addDoc(collection(db, 'rooms', roomCode, 'queue'), {
@@ -175,7 +160,6 @@ export default function ChatRoom() {
     setTab('queue');
   };
 
-  // Play next video in FIFO order
   const handleEnded = useCallback(async () => {
     if (!queueItems.length) return;
     const next = queueItems[0];
@@ -183,44 +167,23 @@ export default function ChatRoom() {
     await deleteDoc(doc(db, 'rooms', roomCode, 'queue', next.id));
   }, [queueItems]);
 
-  if (!roomCode || !user) {
-    return <div className={styles.container}>Loading…</div>;
-  }
-
   return (
     <div className={styles.container}>
-      <header className={styles.topBar}>💖 Room: {roomCode} 💖</header>
+      <div className={styles.topBar}>Room: {roomCode}</div>
+      <div className={styles.playerWrapperFixed}><div id="yt-player"></div></div>
 
-      <div className={styles.playerWrapperFixed}>
-        <div id="yt-player" />
+      <div className={styles.tabButtons}>
+        <button className={tab === 'chat' ? styles.activeTab : styles.tab} onClick={() => setTab('chat')}>Chat</button>
+        <button className={tab === 'search' ? styles.activeTab : styles.tab} onClick={() => setTab('search')}>Search</button>
+        <button className={tab === 'queue' ? styles.activeTab : styles.tab} onClick={() => setTab('queue')}>Queue</button>
       </div>
-
-      <nav className={styles.tabButtons}>
-        {['chat', 'search', 'queue'].map((t) => (
-          <button
-            key={t}
-            className={tab === t ? styles.activeTab : styles.tab}
-            onClick={() => setTab(t)}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </nav>
 
       {tab === 'chat' && (
         <>
-          <section className={styles.chatBox}>
+          <div className={styles.chatBox}>
             {messages.map((msg) => (
               <div key={msg.id} className={styles.message}>
-                {msg.avatar && (
-                  <Image
-                    src={msg.avatar}
-                    width={32}
-                    height={32}
-                    className={styles.avatar}
-                    alt="avatar"
-                  />
-                )}
+                {msg.avatar && <Image src={msg.avatar} width={32} height={32} className={styles.avatar} alt="avatar" />}
                 <div className={styles.bubble}>
                   <div className={styles.sender}>{msg.sender}</div>
                   <div className={styles.text}>{msg.text}</div>
@@ -228,76 +191,59 @@ export default function ChatRoom() {
               </div>
             ))}
             <div ref={bottomRef} />
-          </section>
-          <footer className={styles.inputBar}>
+          </div>
+          <div className={styles.inputBar}>
             <input
               className={styles.input}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Type your love note…"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') sendMessage();
+              }}
+              placeholder="Type a message"
             />
-            <button onClick={sendMessage} className={styles.sendButton}>
-              ❤️ Send
-            </button>
-          </footer>
+            <button onClick={sendMessage} className={styles.sendButton}>Send</button>
+          </div>
         </>
       )}
 
       {tab === 'search' && (
-        <section className={styles.searchPanel}>
+        <div className={styles.searchPanel}>
           <div className={styles.searchBar}>
             <input
               className={styles.input}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search songs…"
+              placeholder="Search YouTube"
             />
-            <button onClick={handleSearch} className={styles.sendButton}>
-              🔍
-            </button>
+            <button onClick={handleSearch} className={styles.sendButton}>🔍</button>
           </div>
           <div className={styles.results}>
             {searchResults.map((item) => (
               <div key={item.videoId} className={styles.resultItem}>
-                <Image
-                  src={item.thumbnail}
-                  width={120}
-                  height={90}
-                  alt="thumb"
-                />
+                <Image src={item.thumbnail} width={120} height={90} alt={item.title} />
                 <div>
-                  <p className={styles.resultTitle}>{item.title}</p>
-                  <button
-                    onClick={() => addToQueue(item)}
-                    className={styles.queueButton}
-                  >
-                    ➕ Love
-                  </button>
+                  <p>{item.title}</p>
+                  <button onClick={() => addToQueue(item)}>➕ Add to Queue</button>
                 </div>
               </div>
             ))}
           </div>
-        </section>
+        </div>
       )}
 
       {tab === 'queue' && (
-        <section className={styles.queuePanel}>
+        <div className={styles.queuePanel}>
           {queueItems.map((item) => (
             <div key={item.id} className={styles.queueItem}>
-              <Image
-                src={item.thumbnail}
-                width={120}
-                height={90}
-                alt="thumb"
-              />
+              <Image src={item.thumbnail} width={120} height={90} alt={item.title} />
               <div>
-                <p className={styles.resultTitle}>{item.title}</p>
+                <p>{item.title}</p>
                 <small>Added by {item.addedBy}</small>
               </div>
             </div>
           ))}
-        </section>
+        </div>
       )}
     </div>
   );
