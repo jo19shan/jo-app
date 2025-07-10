@@ -150,15 +150,21 @@ export default function ChatRoom() {
     }
   };
 
-  const addToQueue = async (item) => {
-    if (!user) return;
-    await addDoc(collection(db, 'rooms', roomCode, 'queue'), {
-      ...item,
-      addedBy: user.displayName,
-      addedAt: serverTimestamp(),
-    });
-    setTab('queue');
-  };
+const addToQueue = async (item) => {
+  if (!user) return;
+
+  await addDoc(collection(db, 'rooms', roomCode, 'queue'), {
+    ...item,
+    addedBy: user.displayName,
+    addedAt: serverTimestamp(),
+  });
+
+  // Set the video to play immediately
+  await updateRoom({ currentVideoId: item.videoId, playing: true });
+
+  setTab('queue');
+};
+
 
   const handleEnded = useCallback(async () => {
     if (!queueItems.length) return;
