@@ -66,7 +66,7 @@ export default function ChatRoom() {
     if (!roomRef) return;
     return onSnapshot(roomRef, (snap) => {
       const data = snap.data();
-      if (data?.currentVideoId) setCurrentVideoId(data.currentVideoId);
+      if (data?.currentVideoId !== undefined) setCurrentVideoId(data.currentVideoId);
       if (typeof data?.playing === 'boolean') setPlaying(data.playing);
     });
   }, [roomRef]);
@@ -86,6 +86,8 @@ export default function ChatRoom() {
           onReady: () => {},
           onStateChange: (e) => {
             if (e.data === window.YT.PlayerState.ENDED) handleEnded();
+            if (e.data === window.YT.PlayerState.PAUSED) updateRoom({ playing: false });
+            if (e.data === window.YT.PlayerState.PLAYING) updateRoom({ playing: true });
           },
         },
       });
@@ -130,15 +132,18 @@ export default function ChatRoom() {
   const handleSearch = async () => {
     if (!searchTerm.trim()) return;
     try {
-      const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-        params: {
-          key: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
-          part: 'snippet',
-          type: 'video',
-          maxResults: 8,
-          q: searchTerm,
-        },
-      });
+      const response = await axios.get(
+        'https://www.googleapis.com/youtube/v3/search',
+        {
+          params: {
+            key: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
+            part: 'snippet',
+            type: 'video',
+            maxResults: 8,
+            q: searchTerm,
+          },
+        }
+      );
       const data = response.data;
       setSearchResults(
         data.items.map((i) => ({
@@ -149,7 +154,7 @@ export default function ChatRoom() {
       );
     } catch (error) {
       console.error('YouTube API error', error);
-      alert('Search failed. Check your API key or referer settings.');
+      alert('Search failed. Please check your YouTube API key or referer restrictions.');
     }
   };
 
@@ -160,7 +165,6 @@ export default function ChatRoom() {
       addedBy: user.displayName,
       addedAt: serverTimestamp(),
     });
-    await updateRoom({ currentVideoId: item.videoId, playing: true });
     setTab('queue');
   };
 
@@ -170,6 +174,10 @@ export default function ChatRoom() {
     await updateRoom({ currentVideoId: next.videoId, playing: true });
     await deleteDoc(doc(db, 'rooms', roomCode, 'queue', next.id));
   }, [queueItems]);
+
+  const handlePlaySelected = async (item) => {
+    await updateRoom({ currentVideoId: item.videoId, playing: true });
+  };
 
   return (
     <div className={styles.container}>
@@ -244,6 +252,7 @@ export default function ChatRoom() {
               <div>
                 <p>{item.title}</p>
                 <small>Added by {item.addedBy}</small>
+                <button onClick={() => handlePlaySelected(item)}>▶️ Play Now</button>
               </div>
             </div>
           ))}
